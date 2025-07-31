@@ -16,11 +16,10 @@ OANDA_ACCOUNT_ID = "101-004-35770497-001"
 SYMBOL = "XAU_USD"
 GRANULARITY = "M5"
 CANDLES = 3840
-LOT_SIZE = 1.0
 START_BALANCE = 100000.0
 BACKTEST_START_DATE = "2025-01-01T00:00:00Z"  # <-- Use ISO 8601 format
 LOCAL_TZ = timezone('Europe/London')
-EXPORT_DIR = r"C:\Users\anish\OneDrive\Desktop\Anish\Trading Bots\EMA-VWAP Scalp"
+EXPORT_DIR = r"C:\\Users\\anish\\OneDrive\\Desktop\\Anish\\Trading Bots\\EMA-VWAP Scalp"
 
 # === FETCH DATA === #
 def fetch_oanda_candles():
@@ -76,14 +75,17 @@ def fetch_oanda_candles():
 
 # === CALCULATE INDICATORS === #
 def calculate_indicators(df):
-    df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
-    df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
+    EMA_FAST = 20
+    EMA_SLOW = 50
+    df['ema_fast'] = df['close'].ewm(span=EMA_FAST, adjust=False).mean()
+    df['ema_slow'] = df['close'].ewm(span=EMA_SLOW, adjust=False).mean()
+
     df['vwap'] = (df['volume'] * (df['high']+df['low']+df['close'])/3).cumsum() / df['volume'].cumsum()
     df['tr'] = np.maximum(df['high']-df['low'], np.maximum(abs(df['high']-df['close'].shift(1)), abs(df['low']-df['close'].shift(1))))
     df['atr'] = df['tr'].rolling(window=14).mean()
     return df
 
-# === BACKTEST STRATEGY === #
+# === BACKTEST STRATEGY WITH RISK MANAGEMENT === #
 def run_backtest(df):
     trades = []
     balance = START_BALANCE
@@ -91,6 +93,7 @@ def run_backtest(df):
     entry_price = 0
     sl = 0
     tp = 0
+    lot_size = 1.0
 
     for i in range(51, len(df)):
         price = df['close'].iloc[i]
@@ -98,20 +101,33 @@ def run_backtest(df):
 
         # ENTRY CONDITIONS
         if position is None:
+
             # LONG SETUP
-            if row['close'] > row['vwap'] and row['ema20'] > row['ema50'] and row['close'] > row['ema20'] and df['low'].iloc[i-1] <= row['ema20']:
-                risk = row['atr']
-                sl = price - risk
-                tp = price + 1.5 * (price - sl)
+            if (row['close'] > row['vwap'] and
+                row['ema_fast'] > row['ema_slow'] and
+                    row['close'] > row['ema_fast'] and
+                    df['low'].iloc[i-1] <= row['ema_fast']):
+
+                risk_per_trade = balance * 0.005
+                sl = price - row['atr']
+                risk_pips = price - sl
+                lot_size = risk_per_trade / risk_pips if risk_pips > 0 else 1.0
+                tp = price + 1.5 * risk_pips
                 position = 'BUY'
                 entry_price = price
                 entry_time = df.index[i]
 
             # SHORT SETUP
-            elif row['close'] < row['vwap'] and row['ema20'] < row['ema50'] and row['close'] < row['ema20'] and df['high'].iloc[i-1] >= row['ema20']:
-                risk = row['atr']
-                sl = price + risk
-                tp = price - 1.5 * (sl - price)
+            elif (row['close'] < row['vwap'] and
+                  row['ema_fast'] < row['ema_slow'] and
+                  row['close'] < row['ema_fast'] and
+                  df['high'].iloc[i-1] >= row['ema_fast']):
+
+                risk_per_trade = balance * 0.005
+                sl = price + row['atr']
+                risk_pips = sl - price
+                lot_size = risk_per_trade / risk_pips if risk_pips > 0 else 1.0
+                tp = price - 1.5 * risk_pips
                 position = 'SELL'
                 entry_price = price
                 entry_time = df.index[i]
@@ -120,14 +136,14 @@ def run_backtest(df):
         else:
             if position == 'BUY' and (row['low'] <= sl or row['high'] >= tp):
                 exit_price = sl if row['low'] <= sl else tp
-                profit = (exit_price - entry_price) * LOT_SIZE
+                profit = (exit_price - entry_price) * lot_size
                 balance += profit
                 trades.append({'entry_time': entry_time, 'exit_time': df.index[i], 'direction': 'BUY', 'entry_price': entry_price, 'exit_price': exit_price, 'profit': profit})
                 position = None
 
             elif position == 'SELL' and (row['high'] >= sl or row['low'] <= tp):
                 exit_price = sl if row['high'] >= sl else tp
-                profit = (entry_price - exit_price) * LOT_SIZE
+                profit = (entry_price - exit_price) * lot_size
                 balance += profit
                 trades.append({'entry_time': entry_time, 'exit_time': df.index[i], 'direction': 'SELL', 'entry_price': entry_price, 'exit_price': exit_price, 'profit': profit})
                 position = None
@@ -166,14 +182,14 @@ def summarize_results(trades, final_balance):
         'Timeframe': timeframe,
         'Start Time': start_time.strftime("%d/%m/%Y %H:%M:%S"),
         'End Time': end_time.strftime("%d/%m/%Y %H:%M:%S"),
-        'Starting Balance': START_BALANCE,
-        'Ending Balance': round(final_balance, 2),
-        'Total Return': round(final_balance - START_BALANCE, 2),
-        'Total Trades': len(trades),
-        'Biggest Win': round(trades['profit'].max(), 2),
-        'Biggest Loss': round(trades['profit'].min(), 2),
+        'Starting Balance': f"${START_BALANCE:,.2f}",
+        'Ending Balance': f"${final_balance:,.2f}",
+        'Total Return': f"${(final_balance - START_BALANCE):,.2f}",
+        'Total Trades': int(len(trades)),
+        'Biggest Win': f"${trades['profit'].max():,.2f}",
+        'Biggest Loss': f"${trades['profit'].min():,.2f}",
         'Winning Trades': int((trades['profit'] > 0).sum()),
-        'Win Rate (%)': round((trades['profit'] > 0).mean(), 4)
+        'Win Rate (%)': f"{(trades['profit'] > 0).mean() * 100:.2f}%"
     }
 
     print("\n===== BACKTEST SUMMARY =====")
