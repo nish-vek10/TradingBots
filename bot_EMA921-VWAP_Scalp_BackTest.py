@@ -22,9 +22,9 @@ LOCAL_TZ = timezone('Europe/London')
 EXPORT_DIR = r"C:\\Users\\anish\\OneDrive\\Desktop\\Anish\\Trading Bots\\EMA-VWAP Scalp"
 
 # === STRATEGY VARIABLES === #
-EMA_FAST_PERIOD = 20
+EMA_FAST_PERIOD = 9
 EMA_SLOW_PERIOD = 50
-RISK_PERCENT = 0.005          # 0.5% risk per trade
+RISK_PERCENT = 0.01          # 0.5% risk per trade
 SL_MULTIPLIER = 1.5
 TP_MULTIPLIER = 2
 

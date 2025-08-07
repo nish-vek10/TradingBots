@@ -16,8 +16,8 @@ from pytz import timezone
 
 # === CONFIGURATION === #
 symbols = [
-    {"mt5": "XAUUSD", "oanda": "XAU_USD", "fixed_sl": 40},
-    {"mt5": "BTCUSD", "oanda": "BTC_USD", "fixed_sl": 4000}
+    {"mt5": "XAUUSD", "oanda": "XAU_USD", "fixed_sl": 40, "fixed_tp": 40},
+    {"mt5": "BTCUSD", "oanda": "BTC_USD", "fixed_sl": 4000, "fixed_tp": 4000}
 ]
 
 timeframe = mt5.TIMEFRAME_H1
@@ -118,7 +118,7 @@ def get_position(symbol):
             return p
     return None
 
-def send_order(symbol, action_type, lot, sl_distance):
+def send_order(symbol, action_type, lot, sl_distance, tp_distance):
     """
     Send a buy or sell order.
     """
@@ -156,7 +156,15 @@ def send_order(symbol, action_type, lot, sl_distance):
         return
 
     price = tick.ask if action_type == mt5.ORDER_TYPE_BUY else tick.bid
+
     sl_price = price - sl_distance if action_type == mt5.ORDER_TYPE_BUY else price + sl_distance
+    tp_price = price + tp_distance if action_type == mt5.ORDER_TYPE_BUY else price - tp_distance
+
+    # Ensure SL/TP prices are correctly rounded to symbol precision
+    digits = symbol_info.digits
+    sl_price = round(sl_price, digits)
+    tp_price = round(tp_price, digits)
+    price = round(price, digits)  # Also round entry price for consistency
 
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
@@ -165,6 +173,7 @@ def send_order(symbol, action_type, lot, sl_distance):
         "type": action_type,
         "price": price,
         "sl": sl_price,
+        "tp": tp_price,
         "deviation": slippage,
         "magic": magic_number,
         "comment": "ChandelierEntryBot",
@@ -293,19 +302,26 @@ last_signal_info = {s['mt5']: None for s in symbols}  # Stores time and signal i
 while True:
     # WAIT UNTIL NEXT 1-HOUR CANDLE
     now = datetime.now()
-    seconds = now.minute * 60 + now.second
-    sleep_seconds = (3600 - (seconds % 3600)) % 3600
+    sleep_seconds = 3600 - (now.minute * 60 + now.second)
 
     # seconds = now.minute * 60 + now.second
     # sleep_seconds = (3600 - (seconds % 3600)) % 3600
 
     print("\n[*] Waiting until next 1-hour candle close...\n")
-    while sleep_seconds > 0:
-        wait_time_formatted = str(timedelta(seconds=sleep_seconds))
+
+    target_time = (datetime.now().replace(second=0, microsecond=0) + timedelta(hours=1))
+
+    while True:
+        now = datetime.now()
+        remaining = (target_time - now).total_seconds()
+
+        if remaining <= 0:
+            break
+
+        wait_time_formatted = str(timedelta(seconds=int(remaining)))
         sys.stdout.write(f"\rTime remaining: {wait_time_formatted} ")
         sys.stdout.flush()
         time.sleep(1)
-        sleep_seconds -= 1
 
     print("\n[+] 1-hour candle closed. Fetching data...\n")
 
@@ -395,13 +411,13 @@ while True:
                 if open_position == 'SELL':
                     close_position(position, mt5_symbol)
                 if open_position != 'BUY':
-                    send_order(mt5_symbol, mt5.ORDER_TYPE_BUY, lot_size, s['fixed_sl'])
+                    send_order(mt5_symbol, mt5.ORDER_TYPE_BUY, lot_size, s['fixed_sl'], s['fixed_tp'])
 
             elif signal == 'SELL':
                 if open_position == 'BUY':
                     close_position(position, mt5_symbol)
                 if open_position != 'SELL':
-                    send_order(mt5_symbol, mt5.ORDER_TYPE_SELL, lot_size, s['fixed_sl'])
+                    send_order(mt5_symbol, mt5.ORDER_TYPE_SELL, lot_size, s['fixed_sl'], s['fixed_tp'])
         else:
             print(f"[INFO] No new trade action needed for {mt5_symbol}. Signal unchanged: {signal}")
 
