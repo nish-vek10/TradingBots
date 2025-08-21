@@ -4,6 +4,7 @@ import numpy as np
 from datetime import datetime, timezone as dt_timezone
 from pytz import timezone
 import os
+import random
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.drawing.image import Image as ExcelImage
@@ -13,7 +14,7 @@ import matplotlib.pyplot as plt
 # === USER CONFIG === #
 OANDA_TOKEN = "37ee33b35f88e073a08d533849f7a24b-524c89ef15f36cfe532f0918a6aee4c2"
 OANDA_ACCOUNT_ID = "101-004-35770497-001"
-SYMBOL = "XAU_USD"
+SYMBOL = "BTC_USD"
 GRANULARITY = "M5"
 CANDLES = 3840
 START_BALANCE = 10000.0
@@ -24,9 +25,9 @@ EXPORT_DIR = r"C:\\Users\\anish\\OneDrive\\Desktop\\Anish\\Trading Bots\\EMA-VWA
 # === STRATEGY VARIABLES === #
 EMA_FAST_PERIOD = 9
 EMA_SLOW_PERIOD = 50
-RISK_PERCENT = 0.01          # 0.5% risk per trade
+RISK_PERCENT = 0.005          # 1.0% risk per trade
 SL_MULTIPLIER = 1.5
-TP_MULTIPLIER = 2
+TP_MULTIPLIER = 2.5
 
 # === FETCH DATA === #
 def fetch_oanda_candles():
@@ -235,7 +236,7 @@ def summarize_results(trades, final_balance):
 
     os.makedirs(EXPORT_DIR, exist_ok=True)
     output_path = os.path.join(EXPORT_DIR,
-                               f"EMA_VWAP_Scalping_{ticker}_{timeframe}_EMA({EMA_FAST_PERIOD}-{EMA_SLOW_PERIOD}).xlsx")
+                               f"EMA_VWAP_Scalping_{ticker}_{timeframe}_EMA({EMA_FAST_PERIOD}-{EMA_SLOW_PERIOD}-{random.randint(1,20)}).xlsx")
     wb = Workbook()
     ws1 = wb.active
     ws1.title = "Trades"
